@@ -1,0 +1,40 @@
+{
+  "specification_version": 1,
+  "basis": "ТЗ версия 2",
+  "device": "cpu",
+  "input": {
+    "window_size": 12,
+    "feature_names": ["density_1", "density_2", "density_3"],
+    "normalization_divisor": 200,
+    "step_minutes": 5,
+    "horizon_minutes": 5
+  },
+  "model": {
+    "type": "GRU",
+    "input_size": 3,
+    "hidden_size": 32,
+    "num_layers": 1,
+    "bidirectional": false,
+    "bias": true,
+    "dropout": 0,
+    "batch_first": true,
+    "num_classes": 3
+  },
+  "training": {
+    "seed": 42,
+    "loss": "CrossEntropyLoss",
+    "optimizer": "Adam",
+    "learning_rate": 0.001,
+    "batch_size": 128,
+    "drop_last": false,
+    "max_epochs": 30,
+    "early_stopping_patience": 5,
+    "checkpoint_selection": "minimum_validation_loss_earliest_tie"
+  },
+  "paths": {
+    "input_csv": "data/traffic_density.csv",
+    "weights": "models/best.pt",
+    "model_metadata": "models/metadata.json",
+    "results": "results"
+  }
+}

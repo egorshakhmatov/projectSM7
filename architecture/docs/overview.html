@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>СМ7 — архитектура программы</title>
+  <style>
+    :root{color-scheme:light;--ink:#182e3b;--muted:#556a77;--paper:#f3f6f7;--line:#d5e0e5;--green:#106854;--blue:#275f91}
+    *{box-sizing:border-box} body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.6 "Segoe UI",Arial,sans-serif}
+    main{max-width:1320px;margin:auto;padding:44px 32px 60px} header{border-bottom:1px solid var(--line);padding-bottom:28px}
+    .eyebrow{font-size:12px;letter-spacing:2px;font-weight:700;color:var(--green)} h1{font-size:clamp(30px,4vw,48px);line-height:1.16;max-width:850px;margin:14px 0 18px;letter-spacing:-1px}
+    .lead{font-size:19px;max-width:880px;margin:0;color:var(--muted)} .badge{display:inline-block;background:#fff1d8;color:#755013;padding:5px 12px;border-radius:30px;font-size:13px;margin-top:20px}
+    nav{display:flex;gap:24px;flex-wrap:wrap;padding:20px 0} a{color:var(--blue);text-underline-offset:4px} nav a{font-weight:600;text-decoration:none}
+    section{margin:30px 0} h2{font-size:27px;line-height:1.25;margin:0 0 12px} h3{font-size:19px;margin:0 0 8px} p{margin:8px 0 12px}.muted{color:var(--muted)}
+    .facts,.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}.card{background:white;border:1px solid var(--line);border-radius:16px;padding:24px}.fact b{display:block;font-size:30px;color:var(--green)}
+    .diagram{border:1px solid var(--line);border-radius:16px;overflow-x:auto;background:white}.diagram svg{display:block;width:100%;min-width:850px;height:auto}.diagram text{font-family:"Segoe UI",Arial,sans-serif}
+    .note{border-left:4px solid var(--green);padding:8px 18px;background:#e9f2ee;border-radius:0 8px 8px 0}.pipeline{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:20px;background:white;border:1px solid var(--line);border-radius:12px}.step{background:#edf3f8;padding:10px 16px;border-radius:8px;font-weight:600}.arrow{color:var(--muted)}
+    table{border-collapse:collapse;width:100%;background:white} th,td{text-align:left;padding:14px 16px;border-bottom:1px solid var(--line);vertical-align:top} th{background:#e7eef2;font-size:14px} .table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px}
+    code{font:14px Consolas,monospace;background:#e8eef1;padding:2px 5px;border-radius:4px} li{margin:8px 0} footer{margin-top:40px;padding-top:18px;border-top:1px solid var(--line);font-size:14px;color:var(--muted)}
+    @media(max-width:720px){main{padding:24px 18px}.facts,.cards{grid-template-columns:1fr}nav{gap:14px}.card{padding:18px}th,td{padding:12px}h2{font-size:24px}}
+    @media print{body{background:white}main{max-width:none;padding:0}nav{display:none}.diagram svg{min-width:0}.card,section{break-inside:avoid}.badge{border:1px solid #bbb}}
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="eyebrow">СМ7 / ПРОЕКТИРОВАНИЕ / ТЗ ВЕРСИЯ 2</div>
+    <h1>Как программа выбирает светофор</h1>
+    <p class="lead">История плотности за последний час → обученная модель → направление с ожидаемой минимальной плотностью в следующие пять минут.</p>
+    <span class="badge">Этап архитектуры · обучение и прогноз ещё не подключены</span>
+  </header>
+  <nav aria-label="Разделы"><a href="#architecture">Схема</a><a href="#model">Выбор модели</a><a href="#launch">Простой запуск</a><a href="#team">Подключение частей</a></nav>
+
+  <div class="facts">
+    <div class="card fact"><b>12 × 3</b>наблюдений на входе: 12 моментов и три светофора</div>
+    <div class="card fact"><b>5 минут</b>интервал, для которого выбирается направление</div>
+    <div class="card fact"><b>1, 2 или 3</b>номер выбранного светофора на выходе</div>
+  </div>
+
+  <section id="architecture">
+    <h2>Два независимых сценария</h2>
+    <p class="muted">Сначала модель обучают и сохраняют. Затем её используют многократно без повторного обучения.</p>
+    <div class="diagram">
+      <svg viewBox="0 0 1240 550" role="img" aria-labelledby="diagram-title diagram-desc">
+        <title id="diagram-title">Потоки обучения и прогнозирования СМ7</title>
+        <desc id="diagram-desc">Данные коллеги поступают в обучение. Обучение сохраняет веса, которые используются при оценке на тесте и при прогнозе. История из двенадцати наблюдений поступает в прогноз. Он выдаёт вероятности и выбранный номер.</desc>
+        <defs><marker id="arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill="#7b91a1"/></marker></defs>
+        <text x="30" y="42" fill="#106854" font-size="17" font-weight="700">01 / ПОДГОТОВКА МОДЕЛИ</text>
+        <g fill="none" stroke="#7b91a1" stroke-width="2" marker-end="url(#arrow)">
+          <path d="M290 140 H330"/><path d="M595 140 H635"/><path d="M900 140 H940"/>
+          <path d="M770 200 V265 H465 V345"/>
+          <path d="M290 405 H330"/><path d="M595 405 H635"/><path d="M900 405 H940"/>
+        </g>
+        <g fill="#f2f5f7" stroke="#d5e0e5" stroke-width="1.5">
+          <rect x="30" y="80" width="260" height="120" rx="12" stroke-dasharray="6 4"/>
+          <rect x="335" y="80" width="260" height="120" rx="12"/>
+          <rect x="640" y="80" width="260" height="120" rx="12" fill="#e9f2ee" stroke="#8db9ac"/>
+          <rect x="945" y="80" width="260" height="120" rx="12"/>
+          <rect x="30" y="345" width="260" height="120" rx="12"/>
+          <rect x="335" y="345" width="260" height="120" rx="12" fill="#e9f2ee" stroke="#8db9ac"/>
+          <rect x="640" y="345" width="260" height="120" rx="12"/>
+          <rect x="945" y="345" width="260" height="120" rx="12" fill="#182e3b" stroke="#182e3b"/>
+        </g>
+        <g fill="#182e3b" font-size="20" font-weight="600">
+          <text x="50" y="115">Данные коллеги</text><text x="355" y="115">Обучение GRU</text>
+          <text x="660" y="115">Лучшая модель</text><text x="965" y="115">Оценка на тесте</text>
+          <text x="50" y="380">Последний час</text><text x="355" y="380">Прогноз GRU</text>
+          <text x="660" y="380">Вероятности</text><text x="965" y="380" fill="white">Светофор 1, 2 или 3</text>
+        </g>
+        <g fill="#556a77" font-size="16">
+          <text x="50" y="146">Train и validation отдельно</text><text x="50" y="174">Внешняя часть этой работы</text>
+          <text x="355" y="146">Не более 30 эпох</text><text x="355" y="174">Выбор по validation</text>
+          <text x="660" y="146">Сохранённые веса</text><text x="660" y="174">Параметры и метаданные</text>
+          <text x="965" y="146">GRU и базовый алгоритм</text><text x="965" y="174">Метрики и CSV решений</text>
+          <text x="790" y="254">Те же веса</text>
+          <text x="50" y="412">12 наблюдений до t</text><text x="50" y="440">Будущие строки не нужны</text>
+          <text x="355" y="412">Загрузка без обучения</text><text x="355" y="440">Вычисления на CPU</text>
+          <text x="660" y="412">Три значения softmax</text><text x="660" y="440">Выбор максимального</text>
+          <text x="965" y="412" fill="#dae7ef">Консоль и JSON</text><text x="965" y="440" fill="#dae7ef">Следующий интервал 5 минут</text>
+        </g>
+        <text x="30" y="310" fill="#275f91" font-size="17" font-weight="700">02 / ИСПОЛЬЗОВАНИЕ ГОТОВОЙ МОДЕЛИ</text>
+        <text x="30" y="513" fill="#556a77" font-size="16">Тестовая выборка подключается только к оценке. Исходный CSV остаётся неизменным.</text>
+      </svg>
+    </div>
+    <p class="note">Данные готовит другой участник. Сейчас мы определяем точку подключения его работы; сбор, генерацию и преобразование набора здесь не выполняем.</p>
+  </section>
+
+  <section id="model">
+    <h2>Выбрана GRU с памятью из 32 чисел</h2>
+    <p>GRU читает наблюдения по порядку и обновляет внутреннюю память. После последнего наблюдения эта память преобразуется в три оценки: какой светофор окажется наиболее свободным. Такая модель прямо задана в ТЗ.</p>
+    <div class="pipeline" aria-label="Схема нейросети">
+      <span class="step">12 × 3 плотности</span><span class="arrow">→</span><span class="step">Деление на 200</span><span class="arrow">→</span><span class="step">GRU 32</span><span class="arrow">→</span><span class="step">Linear 32 → 3</span><span class="arrow">→</span><span class="step">Softmax и выбор</span>
+    </div>
+    <div class="cards" style="margin-top:16px">
+      <article class="card"><h3>Соответствует задаче</h3><p>Обрабатывает последовательность за час. Ответ — класс светофора; отдельный числовой прогноз плотности не нужен.</p></article>
+      <article class="card"><h3>Компактная структура</h3><p>Один слой GRU и выходной слой: 3 651 обучаемый параметр. У LSTM того же размера — 4 835 параметров.</p></article>
+      <article class="card"><h3>Качество проверим</h3><p>Сравнение с минимумом последней строки по Accuracy, F1-macro и избыточной плотности. Преимущество GRU заранее не известно.</p></article>
+    </div>
+    <p class="muted">Во время обучения CrossEntropyLoss получает оценки до softmax. Softmax используется при выдаче вероятностей. При равенстве выбирается меньший номер.</p>
+    <p>Подробности: <a href="model-choice.md">обоснование модели</a>. Первичные источники: <a href="https://docs.pytorch.org/docs/2.15/generated/torch.nn.GRU.html">PyTorch GRU</a>, <a href="https://docs.pytorch.org/docs/2.15/generated/torch.nn.LSTM.html">PyTorch LSTM</a>, <a href="https://docs.pytorch.org/docs/2.15/generated/torch.nn.CrossEntropyLoss.html">CrossEntropyLoss</a>.</p>
+  </section>
+
+  <section id="launch">
+    <h2>Один файл для начала работы</h2>
+    <div class="cards">
+      <article class="card"><h3>Сейчас</h3><p>Двойной щелчок по <code>START.cmd</code> открывает консольное меню. В нём доступны схема, объяснение модели и отчёт о состоянии.</p></article>
+      <article class="card"><h3>После подключения</h3><p>В то же меню добавятся обучение, оценка и прогноз. Обычному пользователю не придётся запоминать команды.</p></article>
+      <article class="card"><h3>Локально на ПК</h3><p>Python 3.12, PyTorch и CPU. Данные, модель и результаты — в отдельных папках. Работа после установки автономная.</p></article>
+    </div>
+    <p>Отдельные команды сохраняются для повторяемых проверок. Прогноз использует готовые веса; обучение выполняется только по явной команде пользователя.</p>
+  </section>
+
+  <section id="team">
+    <h2>Как соединяются части команды</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Часть</th><th>Получает</th><th>Передаёт дальше</th></tr></thead>
+      <tbody>
+        <tr><td>Данные и адаптер</td><td>CSV по ТЗ, настройки</td><td>Окна 12 × 3 в исходных единицах, метки и время</td></tr>
+        <tr><td>Модель и обучение</td><td>Train и validation; деление плотностей на 200</td><td>Лучшие веса, метаданные и журнал</td></tr>
+        <tr><td>Прогноз</td><td>Сохранённая модель и история до t</td><td>Номер, три вероятности и границы интервала</td></tr>
+        <tr><td>Оценка</td><td>Test и лучшие веса</td><td>Метрики обоих алгоритмов и CSV решений</td></tr>
+      </tbody>
+    </table></div>
+    <p>Следующий шаг — согласовать <a href="interfaces.md">интерфейсы</a> с участниками по данным и обучению. Затем реализовать модель и подключить её к данным через адаптер.</p>
+  </section>
+  <footer>25 ноября 2026 · Ветка architecture-design · Все материалы этого этапа находятся в папке architecture.<br>Это схема проекта. Прогнозы, обученные веса и измеренные метрики появятся после реализации и интеграции.</footer>
+</main>
+</body>
+</html>
