@@ -34,7 +34,7 @@ def get_status() -> dict:
         "python_matches_spec": sys.version_info[:2] == (3, 12),
         "model_design": config["model"],
         "torch_installed": importlib.util.find_spec("torch") is not None,
-        "implemented_commands": ["architecture", "model", "status"],
+        "implemented_commands": ["architecture", "model", "status", "gui", "verify-model"],
         "pending_commands": list(PLANNED),
         "forecast_available": False,
         "artifacts": {
@@ -55,7 +55,7 @@ def show_status(as_json: bool = False) -> int:
     print(f"Python: {status['python_version']}")
     print("Версия по ТЗ: " + ("совпадает" if status["python_matches_spec"] else "нужна 3.12"))
     print("Выбранная модель: GRU, один слой, 32 скрытых признака, 3 класса.")
-    print("Работают: меню, просмотр архитектуры, объяснение модели, этот отчёт.")
+    print("Работают: окно с кнопками, архитектура, GRU и её техническая проверка.")
     print("Обучение и прогноз пока не подключены.")
     print("PyTorch: " + ("найден" if status["torch_installed"] else "не установлен; для меню не нужен"))
     for item in status["artifacts"].values():
@@ -107,12 +107,22 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="СМ7: единая точка входа в каркас проекта.")
     commands = parser.add_subparsers(dest="command")
     commands.add_parser("architecture", help="открыть схему в браузере")
+    commands.add_parser("gui", help="открыть окно с кнопками")
+    commands.add_parser("verify-model", help="проверить GRU без дорожных данных")
     commands.add_parser("model", help="показать обоснование модели")
     status = commands.add_parser("status", help="показать состояние каркаса")
     status.add_argument("--json", action="store_true", help="вывести машиночитаемый отчёт")
     for name, explanation in PLANNED.items():
         commands.add_parser(name, help=f"ещё не подключено: {explanation}")
     args = parser.parse_args()
+    if args.command == "gui":
+        from gui import main as open_gui
+        open_gui()
+        return 0
+    if args.command == "verify-model":
+        from model import verify_model
+        print(json.dumps(verify_model(), ensure_ascii=False, indent=2))
+        return 0
     if args.command in PLANNED:
         print(f"Режим {args.command} ещё не подключён. {PLANNED[args.command]}", file=sys.stderr)
         return 2
