@@ -1,5 +1,5 @@
 timestamp_utc,delay_A,delay_B,delay_C,source,window_ok,speed_A_mph,speed_B_mph,speed_C_mph,source_time_A_utc,source_time_B_utc,source_time_C_utc,split
-2024-01-01T00:00:00Z,0.015,0.2685,0.1146,synthetic,0,,,,,,,train
+2024-01-01T00:00:00Z,0.015,0.2685,0.1145,synthetic,0,,,,,,,train
 2024-01-01T00:15:00Z,0.3159,0.4076,0.1687,synthetic,0,,,,,,,train
 2024-01-01T00:30:00Z,0.1728,0.433,0.092,synthetic,0,,,,,,,train
 2024-01-01T00:45:00Z,0.2153,0.2591,0.2902,synthetic,0,,,,,,,train
