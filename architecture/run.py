@@ -1,4 +1,4 @@
-"""Entry point for the architecture phase. Does not generate or modify data."""
+"""Entry point for SM7: architecture, GRU verification and data preparation."""
 
 from __future__ import annotations
 
@@ -11,11 +11,14 @@ import webbrowser
 
 
 ROOT = Path(__file__).resolve().parent
+DATA_COMMANDS = {
+    "generate": "сгенерировать двухлетний CSV плотностей",
+    "validate": "проверить CSV или историю для прогноза",
+    "prepare": "проверить выборки и создать отчёт с контрольным входом",
+}
 PLANNED = {
-    "generate": "Генератор подключит ответственный за данные.",
-    "prepare": "Подготовку выборок подключит ответственный за данные.",
-    "train": "Обучение подключим после согласования модулей и получения данных.",
-    "evaluate": "Оценка станет доступна после подключения модели и тестовой выборки.",
+    "train": "Обучение подключим после интеграции GRU с подготовленными данными.",
+    "evaluate": "Оценка станет доступна после обучения модели и подключения тестовой выборки.",
     "predict": "Для прогноза нужны модуль прогнозирования и обученные веса.",
 }
 
@@ -29,12 +32,13 @@ def configure_console() -> None:
 def get_status() -> dict:
     config = json.loads((ROOT / "config.json").read_text(encoding="utf-8"))
     return {
-        "phase": "architecture",
+        "phase": "data_preparation",
         "python_version": sys.version.split()[0],
         "python_matches_spec": sys.version_info[:2] == (3, 12),
         "model_design": config["model"],
         "torch_installed": importlib.util.find_spec("torch") is not None,
-        "implemented_commands": ["architecture", "model", "status", "gui", "verify-model"],
+        "numpy_installed": importlib.util.find_spec("numpy") is not None,
+        "implemented_commands": ["architecture", "model", "status", "gui", "verify-model", *DATA_COMMANDS],
         "pending_commands": list(PLANNED),
         "forecast_available": False,
         "artifacts": {
@@ -51,13 +55,14 @@ def show_status(as_json: bool = False) -> int:
     if as_json:
         print(json.dumps(status, ensure_ascii=False, indent=2))
         return 0
-    print("СМ7 — этап проектирования архитектуры")
+    print("СМ7 — архитектура и подготовка данных")
     print(f"Python: {status['python_version']}")
     print("Версия по ТЗ: " + ("совпадает" if status["python_matches_spec"] else "нужна 3.12"))
     print("Выбранная модель: GRU, один слой, 32 скрытых признака, 3 класса.")
-    print("Работают: окно с кнопками, архитектура, GRU и её техническая проверка.")
+    print("Работают: окно с кнопками, меню, архитектура, GRU и её техническая проверка, генерация, проверка и подготовка данных.")
     print("Обучение и прогноз пока не подключены.")
-    print("PyTorch: " + ("найден" if status["torch_installed"] else "не установлен; для меню не нужен"))
+    print("PyTorch: " + ("найден" if status["torch_installed"] else "не установлен; для подготовки данных не нужен"))
+    print("NumPy: " + ("найден" if status["numpy_installed"] else "не установлен; нужен для команд работы с данными"))
     for item in status["artifacts"].values():
         label = "файл найден" if item["exists"] else "файл пока отсутствует"
         print(f"  {item['path']}: {label}")
@@ -79,14 +84,29 @@ def show_model() -> int:
     return 0
 
 
+def run_data_command(argv: list[str]) -> int:
+    # Lazy import keeps architecture/status usable without NumPy or PyTorch.
+    try:
+        from src.sm7.data_adapter import main as data_main
+    except ModuleNotFoundError as error:
+        if error.name != "numpy":
+            raise
+        print("Для подготовки данных установите зависимости: python -m pip install -r requirements-data.txt", file=sys.stderr)
+        return 1
+    return data_main(argv)
+
+
 def menu() -> int:
     if not sys.stdin.isatty():
         return show_status()
     while True:
-        print("\nСМ7 — архитектура проекта")
+        print("\nСМ7 — архитектура проекта и подготовка данных")
         print("1. Открыть схему архитектуры")
         print("2. Прочитать, почему выбрана GRU")
         print("3. Посмотреть состояние проекта")
+        print("4. Сгенерировать данные")
+        print("5. Подготовить выборки и контрольный вход")
+        print("6. Проверить двухлетний CSV")
         print("0. Выход")
         try:
             choice = input("Выберите пункт: ").strip()
@@ -95,23 +115,31 @@ def menu() -> int:
             return 0
         if choice == "0":
             return 0
-        action = {"1": show_architecture, "2": show_model, "3": show_status}.get(choice)
+        action = {"1": show_architecture, "2": show_model, "3": show_status,
+                  "4": lambda: run_data_command(["generate"]),
+                  "5": lambda: run_data_command(["prepare"]),
+                  "6": lambda: run_data_command(["validate"])}.get(choice)
         if action:
             action()
         else:
-            print("Введите 0, 1, 2 или 3.")
+            print("Введите 0, 1, 2, 3, 4, 5 или 6.")
 
 
 def main() -> int:
     configure_console()
-    parser = argparse.ArgumentParser(description="СМ7: единая точка входа в каркас проекта.")
+    # Forward the data command and all its options to the single data CLI.
+    if len(sys.argv) > 1 and sys.argv[1] in DATA_COMMANDS:
+        return run_data_command(sys.argv[1:])
+    parser = argparse.ArgumentParser(description="СМ7: единая точка входа в проект.")
     commands = parser.add_subparsers(dest="command")
     commands.add_parser("architecture", help="открыть схему в браузере")
     commands.add_parser("gui", help="открыть окно с кнопками")
     commands.add_parser("verify-model", help="проверить GRU без дорожных данных")
     commands.add_parser("model", help="показать обоснование модели")
-    status = commands.add_parser("status", help="показать состояние каркаса")
+    status = commands.add_parser("status", help="показать состояние проекта")
     status.add_argument("--json", action="store_true", help="вывести машиночитаемый отчёт")
+    for name, help_text in DATA_COMMANDS.items():
+        commands.add_parser(name, help=help_text)
     for name, explanation in PLANNED.items():
         commands.add_parser(name, help=f"ещё не подключено: {explanation}")
     args = parser.parse_args()
@@ -138,5 +166,5 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except (OSError, ValueError) as error:
-        print(f"Не удалось запустить каркас: {error}", file=sys.stderr)
+        print(f"Не удалось запустить проект: {error}", file=sys.stderr)
         raise SystemExit(1)

@@ -1,0 +1,3 @@
+# Preserve reproducible generated CSV bytes on Windows and Ubuntu.
+data/traffic_density.csv text eol=lf
+data/control/*.csv text eol=lf

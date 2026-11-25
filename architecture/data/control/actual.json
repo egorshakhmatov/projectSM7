@@ -1,0 +1,10 @@
+{
+  "forecast_origin": "2025-09-13T09:20:00",
+  "target_interval_end": "2025-09-13T09:25:00",
+  "true_light": 2,
+  "target_density": [
+    62.5,
+    28.9,
+    48.9
+  ]
+}

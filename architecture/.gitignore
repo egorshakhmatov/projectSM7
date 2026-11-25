@@ -4,7 +4,16 @@ __pycache__/
 .runtime/
 results/*
 !results/.gitkeep
+!results/data_report.json
+!results/data_validation_protocol.md
 data/*
 !data/.gitkeep
+!data/traffic_density.csv
+!data/generator_config.json
+!data/control/
+data/control/*
+!data/control/history.csv
+!data/control/actual.json
+!data/control/invalid_gap.csv
 models/*
 !models/.gitkeep
