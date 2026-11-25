@@ -1,4 +1,4 @@
-"""Entry point for SM7: architecture materials and data preparation."""
+"""Entry point for SM7: architecture, GRU verification and data preparation."""
 
 from __future__ import annotations
 
@@ -17,8 +17,8 @@ DATA_COMMANDS = {
     "prepare": "проверить выборки и создать отчёт с контрольным входом",
 }
 PLANNED = {
-    "train": "Обучение подключим после согласования модулей и получения данных.",
-    "evaluate": "Оценка станет доступна после подключения модели и тестовой выборки.",
+    "train": "Обучение подключим после интеграции GRU с подготовленными данными.",
+    "evaluate": "Оценка станет доступна после обучения модели и подключения тестовой выборки.",
     "predict": "Для прогноза нужны модуль прогнозирования и обученные веса.",
 }
 
@@ -38,7 +38,7 @@ def get_status() -> dict:
         "model_design": config["model"],
         "torch_installed": importlib.util.find_spec("torch") is not None,
         "numpy_installed": importlib.util.find_spec("numpy") is not None,
-        "implemented_commands": ["architecture", "model", "status", *DATA_COMMANDS],
+        "implemented_commands": ["architecture", "model", "status", "gui", "verify-model", *DATA_COMMANDS],
         "pending_commands": list(PLANNED),
         "forecast_available": False,
         "artifacts": {
@@ -59,7 +59,7 @@ def show_status(as_json: bool = False) -> int:
     print(f"Python: {status['python_version']}")
     print("Версия по ТЗ: " + ("совпадает" if status["python_matches_spec"] else "нужна 3.12"))
     print("Выбранная модель: GRU, один слой, 32 скрытых признака, 3 класса.")
-    print("Работают: меню, архитектура, описание модели, генерация, проверка и подготовка данных.")
+    print("Работают: окно с кнопками, меню, архитектура, GRU и её техническая проверка, генерация, проверка и подготовка данных.")
     print("Обучение и прогноз пока не подключены.")
     print("PyTorch: " + ("найден" if status["torch_installed"] else "не установлен; для подготовки данных не нужен"))
     print("NumPy: " + ("найден" if status["numpy_installed"] else "не установлен; нужен для команд работы с данными"))
@@ -133,6 +133,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="СМ7: единая точка входа в проект.")
     commands = parser.add_subparsers(dest="command")
     commands.add_parser("architecture", help="открыть схему в браузере")
+    commands.add_parser("gui", help="открыть окно с кнопками")
+    commands.add_parser("verify-model", help="проверить GRU без дорожных данных")
     commands.add_parser("model", help="показать обоснование модели")
     status = commands.add_parser("status", help="показать состояние проекта")
     status.add_argument("--json", action="store_true", help="вывести машиночитаемый отчёт")
@@ -141,6 +143,14 @@ def main() -> int:
     for name, explanation in PLANNED.items():
         commands.add_parser(name, help=f"ещё не подключено: {explanation}")
     args = parser.parse_args()
+    if args.command == "gui":
+        from gui import main as open_gui
+        open_gui()
+        return 0
+    if args.command == "verify-model":
+        from model import verify_model
+        print(json.dumps(verify_model(), ensure_ascii=False, indent=2))
+        return 0
     if args.command in PLANNED:
         print(f"Режим {args.command} ещё не подключён. {PLANNED[args.command]}", file=sys.stderr)
         return 2
