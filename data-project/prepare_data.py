@@ -6,6 +6,8 @@ import csv
 import hashlib
 import json
 import math
+import statistics
+import sys
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 from itertools import groupby
@@ -27,6 +29,8 @@ def csv_digest(path: Path) -> str:
 
 def compact(source: Path, dest: Path) -> None:
     """Convert the previous enriched CSV to seven columns without changing observations."""
+    if dest.resolve() == ROOT.resolve() or (dest / 'traffic_delays.csv').exists() or (dest / 'provenance.json').exists():
+        raise ValueError('Миграция требует отдельной папки без существующего датасета; канонический CSV защищён от перезаписи.')
     with source.open(encoding='utf-8-sig', newline='') as f:
         original = list(csv.DictReader(f))
     source_labels = [row['source'] for row in original]
@@ -139,11 +143,167 @@ def validate(directory: Path = ROOT):
                       'sources': dict(Counter(labels)), 'valid_windows': counts}, indent=2))
 
 
+def audit_external(csv_path: Path, as_of: datetime | None = None) -> dict:
+    """Read-only audit of an arbitrary CSV; never accepts it into training."""
+    cutoff = as_of if as_of is not None else datetime.now(timezone.utc)
+    if cutoff.tzinfo is None or cutoff.utcoffset() is None:
+        raise ValueError('--as-of must include a UTC offset')
+    cutoff = cutoff.astimezone(timezone.utc)
+    problems: dict[str, dict] = {}
+
+    def issue(level, code, message, line=None):
+        item = problems.setdefault(code, {'level': level, 'code': code, 'message': message,
+                                          'count': 0, 'example_lines': [], 'details': []})
+        item['count'] += 1
+        if line is not None and len(item['example_lines']) < 5:
+            item['example_lines'].append(line)
+        if message not in item['details'] and len(item['details']) < 10:
+            item['details'].append(message)
+
+    splits = Counter()
+    observed = set()
+    missing = Counter()
+    values = {s: {key: [] for key in DELAYS} for s in COUNTS}
+    rank = {'train': 0, 'validation': 1, 'test': 2}
+    previous = None
+    highest_rank = -1
+    earliest = latest = None
+    n = 0
+    with csv_path.open(encoding='utf-8-sig', newline='') as handle:
+        reader = csv.DictReader(handle)
+        header = tuple(reader.fieldnames or ())
+        if header != FIELDS:
+            extra = sorted(set(header) - set(FIELDS))
+            absent = sorted(set(FIELDS) - set(header))
+            issue('error', 'SCHEMA', f'Нужны ровно семь полей в порядке {FIELDS}; лишние: {extra}; отсутствуют: {absent}. Лишние признаки могут содержать будущую информацию.')
+            if absent or len(set(header)) != len(header):
+                return {'status': 'rejected', 'rows': 0, 'as_of_utc': cutoff.isoformat(),
+                        'issues': list(problems.values()), 'metrics': {}}
+        for line, row in enumerate(reader, 2):
+            n += 1
+            if None in row or any(row.get(key) is None or not row[key].strip() for key in FIELDS):
+                issue('error', 'MISSING_FIELDS', 'Пустые значения или неверное количество полей.', line)
+                for key in FIELDS:
+                    if row.get(key) is None or not row[key].strip():
+                        missing[key] += 1
+            split = row.get('split')
+            if split not in rank:
+                issue('error', 'SPLIT_VALUE', 'Выборка должна быть train, validation или test.', line)
+            else:
+                splits[split] += 1
+                if rank[split] < highest_rank:
+                    issue('error', 'SPLIT_LEAKAGE', 'Нарушен порядок train → validation → test: будущая выборка расположена раньше прошлой.', line)
+                highest_rank = max(highest_rank, rank[split])
+            try:
+                local = datetime.fromisoformat((row.get('timestamp') or '').replace('Z', '+00:00'))
+                if local.tzinfo is None or local.utcoffset() is None:
+                    raise ValueError('missing UTC offset')
+                stamp = local.astimezone(timezone.utc)
+            except (ValueError, OverflowError):
+                issue('error', 'TIMESTAMP', 'Дата/время должны быть в ISO 8601 с часовым поясом.', line)
+                local = stamp = None
+            if stamp is not None:
+                earliest = stamp if earliest is None else min(earliest, stamp)
+                latest = stamp if latest is None else max(latest, stamp)
+                if stamp > cutoff:
+                    issue('error', 'FUTURE_OBSERVATION', 'Наблюдение позже даты отсечения: будущие фактические задержки недопустимы.', line)
+                if stamp in observed:
+                    issue('error', 'DUPLICATE_TIMESTAMP', 'Повторяющаяся временная отметка в UTC.', line)
+                observed.add(stamp)
+                if stamp.minute % 15 or stamp.second or stamp.microsecond:
+                    issue('error', 'OFF_GRID', 'Отметка не лежит на 15-минутной сетке UTC.', line)
+                if previous is not None:
+                    if stamp < previous:
+                        issue('error', 'TIME_ORDER', 'Нарушена хронология; строки нельзя перемешивать.', line)
+                    elif stamp - previous != STEP:
+                        issue('error', 'TIME_STEP', 'Пропуск либо неверный временной шаг (ожидается 15 минут).', line)
+                previous = stamp
+                if row.get('is_weekend') in ('0', '1') and row['is_weekend'] != str(int(local.weekday() >= 5)):
+                    issue('error', 'WEEKEND_MISMATCH', 'Признак выходного не согласуется с локальной датой.', line)
+            for key in ('is_holiday', 'is_weekend'):
+                if row.get(key) not in ('0', '1'):
+                    issue('error', 'CALENDAR_FLAG', f'{key}: допустимы только 0 и 1.', line)
+            for key in DELAYS:
+                try:
+                    value = float(row.get(key, ''))
+                    if not math.isfinite(value) or value < 0:
+                        raise ValueError('invalid delay')
+                except (ValueError, TypeError):
+                    issue('error', 'INVALID_DELAY', f'{key}: задержки должны быть конечными, числовыми и неотрицательными.', line)
+                    continue
+                if split in values:
+                    values[split][key].append(value)
+    if not n:
+        issue('error', 'EMPTY', 'Нет наблюдений.')
+    for split in COUNTS:
+        if splits[split] < 12:
+            issue('error', 'INSUFFICIENT_WINDOW', f'{split}: необходимо не менее 12 последовательных строк для окна 8 + горизонт 4.')
+        if n and abs(splits[split] / n - {'train': .70, 'validation': .15, 'test': .15}[split]) > .05:
+            issue('warning', 'SPLIT_RATIO', f'{split}: доля отклоняется более чем на 5 процентных пунктов от 70/15/15.')
+
+    metrics = {}
+    for split, columns in values.items():
+        metrics[split] = {'rows': splits[split], 'share': round(splits[split] / n, 4) if n else 0,
+                          'delay_minutes': {}}
+        for key, data in columns.items():
+            if not data:
+                continue
+            ordered = sorted(data)
+            p95 = ordered[math.ceil(.95 * len(ordered)) - 1]
+            middle = len(ordered) // 2
+            median = ordered[middle] if len(ordered) % 2 else ordered[middle - 1] / 2 + ordered[middle] / 2
+            metrics[split]['delay_minutes'][key] = {
+                'n': len(data), 'min': ordered[0], 'mean': round(statistics.mean(data), 5),
+                'median': round(median, 5), 'p95': p95, 'max': ordered[-1],
+                'zero_share': round(sum(v == 0 for v in data) / len(data), 5),
+            }
+            if ordered[0] == ordered[-1]:
+                issue('warning', 'CONSTANT_DELAY', f'{split}/{key}: все задержки одинаковые; проверьте источник.')
+            if ordered[-1] > 60:
+                issue('warning', 'LARGE_DELAY', f'{split}/{key}: максимум больше 60 минут. Это ориентир для ручной проверки, а не физический предел.')
+    for split in ('validation', 'test'):
+        for key in DELAYS:
+            train = metrics['train']['delay_minutes'].get(key)
+            other = metrics[split]['delay_minutes'].get(key)
+            if train and other and abs(other['median'] - train['median']) > max(0.1, train['p95']):
+                issue('warning', 'DISTRIBUTION_SHIFT', f'{split}/{key}: сильное изменение медианы относительно train (эвристика, не доказательство ошибки).')
+
+    issue('warning', 'PROVENANCE_REQUIRED', 'Для стороннего CSV происхождение строк и способ расчёта задержек не подтверждены. Нельзя гарантировать отсутствие утечки в самих значениях или окон на границе источников. Аудит не подключает файл к обучению.')
+    issue('warning', 'HOLIDAY_CALENDAR', 'Праздники проверены только на формат 0/1: подтвердите регион и календарь источника.')
+    rejected = any(item['level'] == 'error' for item in problems.values())
+    if not rejected:
+        for split in COUNTS:
+            metrics[split]['candidate_windows_before_provenance'] = max(0, splits[split] - 11)
+    return {'status': 'rejected' if rejected else 'manual_review_required', 'rows': n,
+            'columns': list(header), 'as_of_utc': cutoff.isoformat(),
+            'first_utc': earliest.isoformat() if earliest else None,
+            'last_utc': latest.isoformat() if latest else None,
+            'unique_timestamps': len(observed), 'missing_by_column': dict(missing),
+            'issues': list(problems.values()), 'metrics': metrics}
+
+
 if __name__ == '__main__':
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, 'reconfigure'):
+            stream.reconfigure(encoding='utf-8')
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source', type=Path, help='Previous full CSV (optional; migration only)')
     parser.add_argument('--directory', type=Path, default=ROOT)
+    parser.add_argument('--audit', type=Path, help='Audit another CSV without changing the project dataset')
+    parser.add_argument('--as-of', type=datetime.fromisoformat, help='Latest allowed historical timestamp (ISO with UTC offset)')
     args = parser.parse_args()
-    if args.source:
-        compact(args.source, args.directory)
-    validate(args.directory)
+    try:
+        if args.audit:
+            if args.source:
+                parser.error('--audit and --source cannot be combined')
+            report = audit_external(args.audit, args.as_of)
+            print(json.dumps(report, ensure_ascii=False, indent=2))
+            raise SystemExit(1 if report['status'] == 'rejected' else 0)
+        if args.as_of is not None:
+            parser.error('--as-of requires --audit')
+        if args.source:
+            compact(args.source, args.directory)
+        validate(args.directory)
+    except (OSError, ValueError, KeyError, TypeError, csv.Error) as error:
+        print(f'ОШИБКА: {error}', file=sys.stderr)
+        raise SystemExit(1)
