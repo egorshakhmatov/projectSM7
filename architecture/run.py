@@ -12,9 +12,8 @@ import webbrowser
 
 ROOT = Path(__file__).resolve().parent
 DATA_COMMANDS = {
-    "generate": "сгенерировать двухлетний CSV плотностей",
-    "validate": "проверить CSV или историю для прогноза",
-    "prepare": "проверить выборки и создать отчёт с контрольным входом",
+    "validate": "проверить единый датасет задержек",
+    "prepare": "сформировать и проверить обучающие окна",
 }
 PLANNED = {
     "train": "Обучение подключим после интеграции GRU с подготовленными данными.",
@@ -32,7 +31,7 @@ def configure_console() -> None:
 def get_status() -> dict:
     config = json.loads((ROOT / "config.json").read_text(encoding="utf-8"))
     return {
-        "phase": "data_preparation",
+        "phase": "delay_data_integration",
         "python_version": sys.version.split()[0],
         "python_matches_spec": sys.version_info[:2] == (3, 12),
         "model_design": config["model"],
@@ -58,11 +57,11 @@ def show_status(as_json: bool = False) -> int:
     print("СМ7 — архитектура и подготовка данных")
     print(f"Python: {status['python_version']}")
     print("Версия по ТЗ: " + ("совпадает" if status["python_matches_spec"] else "нужна 3.12"))
-    print("Выбранная модель: GRU, один слой, 32 скрытых признака, 3 класса.")
-    print("Работают: окно с кнопками, меню, архитектура, GRU и её техническая проверка, генерация, проверка и подготовка данных.")
+    print("Выбранная модель: GRU, один слой, 32 скрытых признака, 3 числовых прогноза.")
+    print("Работают: окно с кнопками, меню, архитектура, GRU и её техническая проверка, проверка и подготовка данных.")
     print("Обучение и прогноз пока не подключены.")
     print("PyTorch: " + ("найден" if status["torch_installed"] else "не установлен; для подготовки данных не нужен"))
-    print("NumPy: " + ("найден" if status["numpy_installed"] else "не установлен; нужен для команд работы с данными"))
+    print("NumPy: " + ("найден" if status["numpy_installed"] else "не установлен; для подготовки данных не нужен"))
     for item in status["artifacts"].values():
         label = "файл найден" if item["exists"] else "файл пока отсутствует"
         print(f"  {item['path']}: {label}")
@@ -85,15 +84,21 @@ def show_model() -> int:
 
 
 def run_data_command(argv: list[str]) -> int:
-    # Lazy import keeps architecture/status usable without NumPy or PyTorch.
-    try:
-        from src.sm7.data_adapter import main as data_main
-    except ModuleNotFoundError as error:
-        if error.name != "numpy":
-            raise
-        print("Для подготовки данных установите зависимости: python -m pip install -r requirements-data.txt", file=sys.stderr)
-        return 1
-    return data_main(argv)
+    parser = argparse.ArgumentParser(description="Подготовка единого датасета задержек")
+    parser.add_argument("command", choices=DATA_COMMANDS)
+    parser.add_argument("--directory", type=Path, default=ROOT.parent / "data-project")
+    args = parser.parse_args(argv)
+    sys.path.insert(0, str(ROOT.parent / "data-project"))
+    from prepare_data import COUNTS, load_split, validate
+    if args.command == "validate":
+        validate(args.directory)
+    else:
+        summary = {}
+        for split in COUNTS:
+            X, y, sources = load_split(split, args.directory)
+            summary[split] = {"X_shape": [len(X), 8, 3], "y_shape": [len(y), 3], "windows": len(sources)}
+        print(json.dumps(summary, ensure_ascii=False, indent=2))
+    return 0
 
 
 def menu() -> int:
@@ -104,9 +109,8 @@ def menu() -> int:
         print("1. Открыть схему архитектуры")
         print("2. Прочитать, почему выбрана GRU")
         print("3. Посмотреть состояние проекта")
-        print("4. Сгенерировать данные")
-        print("5. Подготовить выборки и контрольный вход")
-        print("6. Проверить двухлетний CSV")
+        print("4. Подготовить выборки")
+        print("5. Проверить двухлетний CSV")
         print("0. Выход")
         try:
             choice = input("Выберите пункт: ").strip()
@@ -116,13 +120,12 @@ def menu() -> int:
         if choice == "0":
             return 0
         action = {"1": show_architecture, "2": show_model, "3": show_status,
-                  "4": lambda: run_data_command(["generate"]),
-                  "5": lambda: run_data_command(["prepare"]),
-                  "6": lambda: run_data_command(["validate"])}.get(choice)
+                  "4": lambda: run_data_command(["prepare"]),
+                  "5": lambda: run_data_command(["validate"])}.get(choice)
         if action:
             action()
         else:
-            print("Введите 0, 1, 2, 3, 4, 5 или 6.")
+            print("Введите 0, 1, 2, 3, 4 или 5.")
 
 
 def main() -> int:

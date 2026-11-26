@@ -24,17 +24,17 @@
 <body>
 <main>
   <header>
-    <div class="eyebrow">СМ7 / ПРОЕКТИРОВАНИЕ / ТЗ ВЕРСИЯ 2</div>
+    <div class="eyebrow">СМ7 / ПРОГНОЗ ЗАДЕРЖЕК / 15 МИНУТ</div>
     <h1>Как программа выбирает светофор</h1>
-    <p class="lead">История плотности за последний час → обученная модель → направление с ожидаемой минимальной плотностью в следующие пять минут.</p>
+    <p class="lead">История задержек → обученная модель → направление с ожидаемой минимальной задержкой через 60 минут.</p>
     <span class="badge">Этап архитектуры · обучение и прогноз ещё не подключены</span>
   </header>
   <nav aria-label="Разделы"><a href="#architecture">Схема</a><a href="#model">Выбор модели</a><a href="#launch">Простой запуск</a><a href="#team">Подключение частей</a></nav>
 
   <div class="facts">
-    <div class="card fact"><b>12 × 3</b>наблюдений на входе: 12 моментов и три светофора</div>
-    <div class="card fact"><b>5 минут</b>интервал, для которого выбирается направление</div>
-    <div class="card fact"><b>1, 2 или 3</b>номер выбранного светофора на выходе</div>
+    <div class="card fact"><b>8 × 3</b>наблюдений на входе: 8 моментов и три светофора</div>
+    <div class="card fact"><b>60 минут</b>горизонт прогноза</div>
+    <div class="card fact"><b>A, B или C</b>направление с минимальной задержкой</div>
   </div>
 
   <section id="architecture">
@@ -43,7 +43,7 @@
     <div class="diagram">
       <svg viewBox="0 0 1240 550" role="img" aria-labelledby="diagram-title diagram-desc">
         <title id="diagram-title">Потоки обучения и прогнозирования СМ7</title>
-        <desc id="diagram-desc">Данные коллеги поступают в обучение. Обучение сохраняет веса, которые используются при оценке на тесте и при прогнозе. История из двенадцати наблюдений поступает в прогноз. Он выдаёт вероятности и выбранный номер.</desc>
+        <desc id="diagram-desc">Единый датасет поступает в обучение. Обучение сохраняет веса, которые используются при оценке на тесте и при прогнозе. История из восьми наблюдений поступает в прогноз. Он выдаёт три задержки и выбранное направление.</desc>
         <defs><marker id="arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill="#7b91a1"/></marker></defs>
         <text x="30" y="42" fill="#106854" font-size="17" font-weight="700">01 / ПОДГОТОВКА МОДЕЛИ</text>
         <g fill="none" stroke="#7b91a1" stroke-width="2" marker-end="url(#arrow)">
@@ -62,42 +62,42 @@
           <rect x="945" y="345" width="260" height="120" rx="12" fill="#182e3b" stroke="#182e3b"/>
         </g>
         <g fill="#182e3b" font-size="20" font-weight="600">
-          <text x="50" y="115">Данные коллеги</text><text x="355" y="115">Обучение GRU</text>
+          <text x="50" y="115">Единый датасет</text><text x="355" y="115">Обучение GRU</text>
           <text x="660" y="115">Лучшая модель</text><text x="965" y="115">Оценка на тесте</text>
-          <text x="50" y="380">Последний час</text><text x="355" y="380">Прогноз GRU</text>
-          <text x="660" y="380">Вероятности</text><text x="965" y="380" fill="white">Светофор 1, 2 или 3</text>
+          <text x="50" y="380">История задержек</text><text x="355" y="380">Прогноз GRU</text>
+          <text x="660" y="380">Три задержки</text><text x="965" y="380" fill="white">Светофор A, B или C</text>
         </g>
         <g fill="#556a77" font-size="16">
-          <text x="50" y="146">Train и validation отдельно</text><text x="50" y="174">Внешняя часть этой работы</text>
+          <text x="50" y="146">Train и validation отдельно</text><text x="50" y="174">15-минутная сетка</text>
           <text x="355" y="146">Не более 30 эпох</text><text x="355" y="174">Выбор по validation</text>
           <text x="660" y="146">Сохранённые веса</text><text x="660" y="174">Параметры и метаданные</text>
           <text x="965" y="146">GRU и базовый алгоритм</text><text x="965" y="174">Метрики и CSV решений</text>
           <text x="790" y="254">Те же веса</text>
-          <text x="50" y="412">12 наблюдений до t</text><text x="50" y="440">Будущие строки не нужны</text>
+          <text x="50" y="412">8 наблюдений до t</text><text x="50" y="440">Будущие строки не нужны</text>
           <text x="355" y="412">Загрузка без обучения</text><text x="355" y="440">Вычисления на CPU</text>
-          <text x="660" y="412">Три значения softmax</text><text x="660" y="440">Выбор максимального</text>
-          <text x="965" y="412" fill="#dae7ef">Консоль и JSON</text><text x="965" y="440" fill="#dae7ef">Следующий интервал 5 минут</text>
+          <text x="660" y="412">Задержки в минутах</text><text x="660" y="440">Выбор минимального</text>
+          <text x="965" y="412" fill="#dae7ef">Консоль и JSON</text><text x="965" y="440" fill="#dae7ef">Горизонт 60 минут</text>
         </g>
         <text x="30" y="310" fill="#275f91" font-size="17" font-weight="700">02 / ИСПОЛЬЗОВАНИЕ ГОТОВОЙ МОДЕЛИ</text>
         <text x="30" y="513" fill="#556a77" font-size="16">Тестовая выборка подключается только к оценке. Исходный CSV остаётся неизменным.</text>
       </svg>
     </div>
-    <p class="note">Данные готовит другой участник. Сейчас мы определяем точку подключения его работы; сбор, генерацию и преобразование набора здесь не выполняем.</p>
+    <p class="note">Данные подготовлены в единственной папке data-project. Проверка и формирование окон подключены.</p>
   </section>
 
   <section id="model">
     <h2>Выбрана GRU с памятью из 32 чисел</h2>
-    <p>GRU читает наблюдения по порядку и обновляет внутреннюю память. После последнего наблюдения эта память преобразуется в три оценки: какой светофор окажется наиболее свободным. Такая модель прямо задана в ТЗ.</p>
+    <p>GRU читает наблюдения по порядку и обновляет внутреннюю память. После последнего наблюдения память преобразуется в три прогноза задержки в минутах.</p>
     <div class="pipeline" aria-label="Схема нейросети">
-      <span class="step">12 × 3 плотности</span><span class="arrow">→</span><span class="step">Деление на 200</span><span class="arrow">→</span><span class="step">GRU 32</span><span class="arrow">→</span><span class="step">Linear 32 → 3</span><span class="arrow">→</span><span class="step">Softmax и выбор</span>
+      <span class="step">8 × 3 задержки</span><span class="arrow">→</span><span class="step">Задержки в минутах</span><span class="arrow">→</span><span class="step">GRU 32</span><span class="arrow">→</span><span class="step">Linear 32 → 3</span><span class="arrow">→</span><span class="step">Softplus и минимум</span>
     </div>
     <div class="cards" style="margin-top:16px">
-      <article class="card"><h3>Соответствует задаче</h3><p>Обрабатывает последовательность за час. Ответ — класс светофора; отдельный числовой прогноз плотности не нужен.</p></article>
+      <article class="card"><h3>Соответствует задаче</h3><p>Обрабатывает восемь наблюдений. Ответ — три прогнозируемые задержки через 60 минут.</p></article>
       <article class="card"><h3>Компактная структура</h3><p>Один слой GRU и выходной слой: 3 651 обучаемый параметр. У LSTM того же размера — 4 835 параметров.</p></article>
-      <article class="card"><h3>Качество проверим</h3><p>Сравнение с минимумом последней строки по Accuracy, F1-macro и избыточной плотности. Преимущество GRU заранее не известно.</p></article>
+      <article class="card"><h3>Качество проверим</h3><p>Сравнение с минимумом последней строки по MAE, доле верного выбора и дополнительной задержке. Преимущество GRU заранее не известно.</p></article>
     </div>
-    <p class="muted">Во время обучения CrossEntropyLoss получает оценки до softmax. Softmax используется при выдаче вероятностей. При равенстве выбирается меньший номер.</p>
-    <p>Подробности: <a href="model-choice.md">обоснование модели</a>. Первичные источники: <a href="https://docs.pytorch.org/docs/2.15/generated/torch.nn.GRU.html">PyTorch GRU</a>, <a href="https://docs.pytorch.org/docs/2.15/generated/torch.nn.LSTM.html">PyTorch LSTM</a>, <a href="https://docs.pytorch.org/docs/2.15/generated/torch.nn.CrossEntropyLoss.html">CrossEntropyLoss</a>.</p>
+    <p class="muted">Во время обучения MSELoss сравнивает прогнозируемые и фактические задержки. При равенстве минимума выбирается первое направление.</p>
+    <p>Подробности: <a href="model-choice.md">обоснование модели</a>. Первичные источники: <a href="https://docs.pytorch.org/docs/2.15/generated/torch.nn.GRU.html">PyTorch GRU</a>, <a href="https://docs.pytorch.org/docs/2.15/generated/torch.nn.LSTM.html">PyTorch LSTM</a>, <a href="https://docs.pytorch.org/docs/2.15/generated/torch.nn.MSELoss.html">MSELoss</a>.</p>
   </section>
 
   <section id="launch">
@@ -115,15 +115,15 @@
     <div class="table-wrap"><table>
       <thead><tr><th>Часть</th><th>Получает</th><th>Передаёт дальше</th></tr></thead>
       <tbody>
-        <tr><td>Данные и адаптер</td><td>CSV по ТЗ, настройки</td><td>Окна 12 × 3 в исходных единицах, метки и время</td></tr>
-        <tr><td>Модель и обучение</td><td>Train и validation; деление плотностей на 200</td><td>Лучшие веса, метаданные и журнал</td></tr>
-        <tr><td>Прогноз</td><td>Сохранённая модель и история до t</td><td>Номер, три вероятности и границы интервала</td></tr>
+        <tr><td>Данные и адаптер</td><td>CSV по ТЗ, настройки</td><td>Окна 8 × 3 и три задержки через час</td></tr>
+        <tr><td>Модель и обучение</td><td>Train и validation; задержки в минутах</td><td>Лучшие веса, метаданные и журнал</td></tr>
+        <tr><td>Прогноз</td><td>Сохранённая модель и история до t</td><td>Направление, три задержки и время прогноза</td></tr>
         <tr><td>Оценка</td><td>Test и лучшие веса</td><td>Метрики обоих алгоритмов и CSV решений</td></tr>
       </tbody>
     </table></div>
-    <p>Следующий шаг — согласовать <a href="interfaces.md">интерфейсы</a> с участниками по данным и обучению. Затем реализовать модель и подключить её к данным через адаптер.</p>
+    <p><a href="interfaces.md">Интерфейсы</a> обновлены. Следующий шаг — обучение на готовых данных и оценка.</p>
   </section>
-  <footer>25 ноября 2026 · Ветка architecture-design · Все материалы этого этапа находятся в папке architecture.<br>Это схема проекта. Прогнозы, обученные веса и измеренные метрики появятся после реализации и интеграции.</footer>
+  <footer>26 ноября 2026 · Переход на единый 15-минутный датасет.<br>Это схема проекта. Прогнозы, обученные веса и измеренные метрики появятся после реализации и интеграции.</footer>
 </main>
 </body>
 </html>

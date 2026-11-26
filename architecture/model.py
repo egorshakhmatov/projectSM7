@@ -1,4 +1,4 @@
-"""GRU from specification 2; independent from CSV and training orchestration."""
+"""GRU for three nonnegative delay forecasts, independent of CSV loading."""
 import io
 import torch
 from torch import nn
@@ -10,11 +10,11 @@ class TrafficGRU(nn.Module):
         self.gru = nn.GRU(3, 32, num_layers=1, batch_first=True)
         self.output = nn.Linear(32, 3)
 
-    def forward(self, normalized_history):
-        if normalized_history.ndim != 3 or normalized_history.shape[1:] != (12, 3):
-            raise ValueError("Ожидается вход [размер пакета, 12, 3].")
-        _, hidden = self.gru(normalized_history)
-        return self.output(hidden[0])
+    def forward(self, history):
+        if history.ndim != 3 or history.shape[1:] != (8, 3):
+            raise ValueError("Ожидается вход [размер пакета, 8, 3].")
+        _, hidden = self.gru(history)
+        return nn.functional.softplus(self.output(hidden[0]))
 
 
 def verify_model():
@@ -25,10 +25,10 @@ def verify_model():
         parameters = sum(p.numel() for p in model.parameters())
         if parameters != 3651:
             raise RuntimeError(f"Неверное число параметров: {parameters}")
-        history = torch.linspace(0, 200, 72, dtype=torch.float32).reshape(2, 12, 3) / 200
+        history = torch.linspace(0, 4, 48, dtype=torch.float32).reshape(2, 8, 3)
         optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
         before = {key: value.clone() for key, value in model.state_dict().items()}
-        loss = nn.CrossEntropyLoss()(model(history), torch.tensor([0, 2]))
+        loss = nn.MSELoss()(model(history), torch.tensor([[0.5, 1.0, 2.0], [1.5, 0.7, 1.0]]))
         loss.backward()
         optimizer.step()
         if not any(not torch.equal(value, before[key]) for key, value in model.state_dict().items()):
@@ -36,9 +36,8 @@ def verify_model():
         model.eval()
         with torch.inference_mode():
             expected = model(history)
-            probabilities = expected.softmax(dim=1)
-        if not torch.isfinite(probabilities).all() or not torch.allclose(probabilities.sum(1), torch.ones(2), atol=1e-6, rtol=0):
-            raise RuntimeError("Неверные вероятности модели.")
+        if not torch.isfinite(expected).all() or (expected < 0).any():
+            raise RuntimeError("Неверные прогнозируемые задержки.")
         buffer = io.BytesIO()
         torch.save(model.state_dict(), buffer)
         buffer.seek(0)

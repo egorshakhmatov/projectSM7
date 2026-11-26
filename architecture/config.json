@@ -1,13 +1,17 @@
 {
-  "specification_version": 1,
-  "basis": "ТЗ версия 2",
+  "specification_version": 2,
+  "basis": "Согласованная постановка: задержки, шаг 15 минут, горизонт 60 минут",
   "device": "cpu",
   "input": {
-    "window_size": 12,
-    "feature_names": ["density_1", "density_2", "density_3"],
-    "normalization_divisor": 200,
-    "step_minutes": 5,
-    "horizon_minutes": 5
+    "window_size": 8,
+    "feature_names": [
+      "delay_A",
+      "delay_B",
+      "delay_C"
+    ],
+    "units": "minutes",
+    "step_minutes": 15,
+    "horizon_minutes": 60
   },
   "model": {
     "type": "GRU",
@@ -18,11 +22,12 @@
     "bias": true,
     "dropout": 0,
     "batch_first": true,
-    "num_classes": 3
+    "output_size": 3,
+    "output_activation": "softplus"
   },
   "training": {
     "seed": 42,
-    "loss": "CrossEntropyLoss",
+    "loss": "MSELoss",
     "optimizer": "Adam",
     "learning_rate": 0.001,
     "batch_size": 128,
@@ -32,9 +37,10 @@
     "checkpoint_selection": "minimum_validation_loss_earliest_tie"
   },
   "paths": {
-    "input_csv": "data/traffic_density.csv",
+    "input_csv": "../data-project/traffic_delays.csv",
     "weights": "models/best.pt",
     "model_metadata": "models/metadata.json",
-    "results": "results"
+    "results": "results",
+    "provenance": "../data-project/provenance.json"
   }
 }
