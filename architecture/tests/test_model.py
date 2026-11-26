@@ -6,26 +6,34 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import torch
+try:
+    import torch
+except ModuleNotFoundError:
+    torch = None
 from environment import check_environment
-from model import TrafficGRU, verify_model
+if torch is not None:
+    from model import TrafficGRU, verify_model
 
 
 class ModelChecks(unittest.TestCase):
+    @unittest.skipIf(torch is None, 'PyTorch is not installed')
     def test_single_example_and_incomplete_batch(self):
         model = TrafficGRU().eval()
         with torch.inference_mode():
             for batch in (1, 7):
-                logits = model(torch.zeros(batch, 12, 3))
-                self.assertEqual(tuple(logits.shape), (batch, 3))
-                self.assertTrue(torch.isfinite(logits).all())
+                predictions = model(torch.zeros(batch, 8, 3))
+                self.assertEqual(tuple(predictions.shape), (batch, 3))
+                self.assertTrue(torch.isfinite(predictions).all())
+                self.assertTrue((predictions >= 0).all())
 
+    @unittest.skipIf(torch is None, 'PyTorch is not installed')
     def test_reject_wrong_window_or_feature_count(self):
         model = TrafficGRU()
-        for shape in ((12, 3), (1, 11, 3), (1, 12, 4)):
+        for shape in ((8, 3), (1, 7, 3), (1, 8, 4)):
             with self.assertRaises(ValueError):
                 model(torch.zeros(*shape))
 
+    @unittest.skipIf(torch is None, 'PyTorch is not installed')
     def test_training_and_serialization_preserve_rng(self):
         before = torch.get_rng_state().clone()
         result = verify_model()
