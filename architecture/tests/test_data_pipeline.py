@@ -1,14 +1,17 @@
 """Integration checks for the canonical 15-minute dataset."""
 import json
+import csv
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import subprocess
 import sys
 import unittest
+import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT.parent / "data-project"
 sys.path.insert(0, str(DATA))
-from prepare_data import load_data, load_split, valid_origins
+from prepare_data import FIELDS, audit_external, csv_digest, load_data, load_split, valid_origins
 
 
 class DelayDataChecks(unittest.TestCase):
@@ -51,6 +54,80 @@ class DelayDataChecks(unittest.TestCase):
         self.assertEqual(json.loads(prepared.stdout)["train"]["X_shape"], [45040, 8, 3])
         for command in ("train", "evaluate", "predict"):
             self.assertEqual(run(command).returncode, 2)
+
+
+class ExternalAuditChecks(unittest.TestCase):
+    def fixture(self):
+        start = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        rows = []
+        for i in range(100):
+            stamp = start + timedelta(minutes=15 * i)
+            rows.append(dict(timestamp=stamp.isoformat(), is_holiday='0',
+                             is_weekend=str(int(stamp.weekday() >= 5)),
+                             delay_A=str(i % 5 / 10), delay_B=str(i % 4 / 10), delay_C=str(i % 3 / 10),
+                             split='train' if i < 70 else 'validation' if i < 85 else 'test'))
+        return rows
+
+    def audit(self, rows, fields=FIELDS, cutoff=datetime(2025, 1, 1, tzinfo=timezone.utc)):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'external.csv'
+            with path.open('w', encoding='utf-8', newline='') as f:
+                writer = csv.DictWriter(f, fieldnames=fields)
+                writer.writeheader()
+                writer.writerows(rows)
+            before = csv_digest(path)
+            report = audit_external(path, cutoff)
+            self.assertEqual(csv_digest(path), before)
+            return report
+
+    def test_valid_external_requires_manual_review(self):
+        report = self.audit(self.fixture())
+        self.assertEqual(report['status'], 'manual_review_required')
+        self.assertEqual(report['metrics']['train']['candidate_windows_before_provenance'], 59)
+        self.assertIn('PROVENANCE_REQUIRED', {i['code'] for i in report['issues']})
+        self.assertFalse(any(i['level'] == 'error' for i in report['issues']))
+
+    def test_reject_future_duplicate_and_split_leakage(self):
+        rows = self.fixture()
+        rows[10]['timestamp'] = rows[9]['timestamp']
+        rows[50]['split'] = 'test'
+        rows[99]['timestamp'] = '2026-01-01T00:00:00+00:00'
+        report = self.audit(rows)
+        self.assertEqual(report['status'], 'rejected')
+        self.assertTrue({'FUTURE_OBSERVATION', 'DUPLICATE_TIMESTAMP', 'SPLIT_LEAKAGE', 'TIME_STEP'} <= {i['code'] for i in report['issues']})
+        self.assertNotIn('candidate_windows_before_provenance', report['metrics']['train'])
+
+    def test_reject_extra_fields_and_invalid_delays(self):
+        rows = self.fixture()
+        for row in rows:
+            row['future_delay'] = '2'
+        rows[0]['delay_A'] = 'nan'
+        rows[1]['delay_B'] = '-1'
+        rows[2]['is_weekend'] = '1'
+        report = self.audit(rows, (*FIELDS, 'future_delay'))
+        self.assertEqual(report['status'], 'rejected')
+        self.assertTrue({'SCHEMA', 'INVALID_DELAY', 'WEEKEND_MISMATCH'} <= {i['code'] for i in report['issues']})
+
+    def test_protect_canonical_from_overwrite(self):
+        before = csv_digest(DATA / 'traffic_delays.csv')
+        result = subprocess.run([sys.executable, '-B', str(DATA / 'prepare_data.py'), '--source', 'not_a_migration.csv'],
+                                capture_output=True, text=True, encoding='utf-8')
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('защищён от перезаписи', result.stderr)
+        self.assertEqual(csv_digest(DATA / 'traffic_delays.csv'), before)
+
+    def test_audit_cli_rejects_invalid_csv(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'invalid.csv'
+            path.write_text('timestamp,delay_A\n2024-01-01T00:00:00Z,1\n', encoding='utf-8')
+            before = csv_digest(path)
+            result = subprocess.run([sys.executable, '-B', str(DATA / 'prepare_data.py'), '--audit', str(path)],
+                                    capture_output=True, text=True, encoding='utf-8')
+            self.assertEqual(result.returncode, 1)
+            report = json.loads(result.stdout)
+            self.assertEqual(report['status'], 'rejected')
+            self.assertIn('SCHEMA', {i['code'] for i in report['issues']})
+            self.assertEqual(csv_digest(path), before)
 
 
 if __name__ == "__main__":
